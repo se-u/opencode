@@ -151,8 +151,10 @@ export const {
       hydratingSessions.get(sessionID)?.parts.add(partID)
     }
 
-    function sessionListQuery(): { scope?: "project"; path?: string } {
-      if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
+    function sessionListQuery(): { scope?: "project" | "global"; path?: string } {
+      const enabled = kv.get("session_directory_filter_enabled", undefined)
+      if (enabled === undefined) return { scope: "global" }
+      if (!enabled) return { scope: "project" }
       if (!project.data.instance.path.worktree || !project.data.instance.path.directory) return { scope: "project" }
       return {
         path: path
@@ -276,6 +278,7 @@ export const {
           }
           break
         }
+        case "session.created":
         case "session.updated": {
           const result = search(store.session, event.properties.info.id, (s) => s.id)
           if (result.found) {

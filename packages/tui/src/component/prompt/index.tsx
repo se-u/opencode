@@ -544,10 +544,11 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Move session",
-        desc: "Move to another project dir",
+        desc: "Move to another project or working directory",
         name: "session.move",
         category: "Session",
         slashName: "move",
+        slashAliases: ["wd", "cd", "dir"],
         run: () => {
           move.open()
         },
@@ -962,6 +963,25 @@ export function Prompt(props: PromptProps) {
     const trimmed = store.prompt.input.trim()
     if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
       void exit()
+      return true
+    }
+    const moveMatch = trimmed.match(/^\/(?:cd|wd|move|dir)(?:\s+(.*))?$/)
+    if (moveMatch) {
+      const target = moveMatch[1]?.trim()
+      setStore("prompt", {
+        input: "",
+        parts: [],
+      })
+      setStore("extmarkToPartIndex", new Map())
+      if (input && !input.isDestroyed) {
+        input.extmarks?.clear()
+        input.clear()
+      }
+      if (!target) {
+        move.open()
+        return true
+      }
+      void move.moveTo(target)
       return true
     }
     const selectedModel = local.model.current()

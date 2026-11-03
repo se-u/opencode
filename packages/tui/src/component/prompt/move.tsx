@@ -150,6 +150,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
           ],
         })
         .catch(() => undefined)
+      toast.show({ variant: "info", message: `Moved to ${directory}` })
       dialog.clear()
     } catch (error) {
       toast.error(error)
@@ -158,6 +159,40 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
       setProgress(undefined)
       setCreating(false)
     }
+  }
+
+  async function moveTo(target: string) {
+    const raw = target.trim()
+    if (!raw) {
+      open()
+      return
+    }
+    const sessionID = input.sessionID()
+    const session = sessionID ? sync.session.get(sessionID) : undefined
+    const base = session?.directory ?? project.instance.directory() ?? paths.cwd
+    const expanded = raw.startsWith("~") ? path.join(paths.home, raw.slice(1)) : raw
+    const directory = path.resolve(base, expanded)
+
+    if (session?.directory && path.resolve(session.directory) === directory) {
+      toast.show({ variant: "info", message: `Already in ${directory}` })
+      return
+    }
+
+    if (!sessionID) {
+      homeDestination?.setDestination({
+        type: "directory",
+        directory,
+        subdirectory: directory !== project.instance.path().worktree,
+      })
+      toast.show({ variant: "info", message: `Working directory set to ${directory}` })
+      return
+    }
+
+    await moveExistingSession(sessionID, {
+      type: "directory",
+      directory,
+      subdirectory: directory !== project.instance.path().worktree,
+    })
   }
 
   const pending = createMemo(() => Boolean(homeDestination?.destination()))
@@ -196,6 +231,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
     creatingDots,
     finishSubmit,
     getDirectory,
+    moveTo,
     open,
     pending,
     pendingNew,

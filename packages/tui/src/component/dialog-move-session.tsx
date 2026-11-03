@@ -3,6 +3,7 @@ import { TextAttributes } from "@opentui/core"
 import { createMemo, createResource, createSignal, onMount, Show } from "solid-js"
 import path from "path"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
+import { DialogPrompt } from "../ui/dialog-prompt"
 import { useDialog } from "../ui/dialog"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
@@ -70,9 +71,9 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
     return loadedProject()
   })
 
-  const [directories, { refetch }] = createResource(
+  const [directories, { refetch }] = createResource<ProjectDirectory[] | undefined, string>(
     () => (props.initialRemoving ? undefined : props.projectID),
-    async (projectID, info): Promise<ProjectDirectory[] | undefined> => {
+    async (projectID, info) => {
       try {
         await sdk.client.v2.projectCopy.refresh(
           { projectID, location: { directory: sdk.directory } },
@@ -279,6 +280,25 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
     if (await removedCurrent(deletingCurrent)) return
   }
 
+  async function promptCustomPath() {
+    const value = await DialogPrompt.show(dialog, "Enter directory path", {
+      placeholder: currentDirectory() ?? paths.cwd,
+      value: currentDirectory() ?? "",
+    })
+    if (!value?.trim()) {
+      reopen()
+      return
+    }
+    const target = value.trim()
+    const expanded = target.startsWith("~") ? path.join(paths.home, target.slice(1)) : target
+    const resolved = path.resolve(currentDirectory() ?? paths.cwd, expanded)
+    props.onSelect({
+      type: "directory",
+      directory: resolved,
+      subdirectory: false,
+    })
+  }
+
   const fullHeight = createMemo(() =>
     Math.max(8, Math.min(16, dimensions().height - Math.floor(dimensions().height / 4) - 2)),
   )
@@ -323,6 +343,11 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
                   command: "dialog.move_session.new",
                   title: "new",
                   onTrigger: () => props.onSelect({ type: "new" }),
+                },
+                {
+                  command: "dialog.move_session.custom",
+                  title: "path",
+                  onTrigger: promptCustomPath,
                 },
                 {
                   command: "dialog.move_session.delete",

@@ -1,5 +1,5 @@
 import { Prompt, type PromptRef } from "../component/prompt"
-import { createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js"
 import { Logo } from "../component/logo"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
@@ -12,6 +12,8 @@ import { useEditorContext } from "../context/editor"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
+import { Sidebar } from "./session/sidebar"
+import { useKV } from "../context/kv"
 
 let once = false
 const placeholder = {
@@ -30,9 +32,19 @@ export function Home() {
   const editor = useEditorContext()
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
+  const kv = useKV()
+  const [sidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
+  const [sidebarOpen] = createSignal(false)
+  const wide = createMemo(() => dimensions().width > 120)
+  const sidebarVisible = createMemo(() => {
+    if (sidebarOpen()) return true
+    if (sidebar() === "auto" && wide()) return true
+    return false
+  })
   const promptMaxWidth = createMemo(() => {
     const configured = tuiConfig.prompt?.max_width
-    if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
+    const available = dimensions().width - (sidebarVisible() ? 42 : 0)
+    if (configured === "auto") return Math.max(75, Math.floor(available * 0.7))
     return configured ?? 75
   })
   let sent = false
@@ -69,23 +81,28 @@ export function Home() {
 
   return (
     <HomeSessionDestinationProvider>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
-        <box flexGrow={1} minHeight={0} />
-        <box height={4} minHeight={0} flexShrink={1} />
-        <box flexShrink={0}>
-          <pluginRuntime.Slot name="home_logo" mode="replace">
-            <Logo />
-          </pluginRuntime.Slot>
+      <box flexDirection="row" flexGrow={1} minHeight={0}>
+        <Show when={sidebarVisible()}>
+          <Sidebar />
+        </Show>
+        <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+          <box flexGrow={1} minHeight={0} />
+          <box height={4} minHeight={0} flexShrink={1} />
+          <box flexShrink={0}>
+            <pluginRuntime.Slot name="home_logo" mode="replace">
+              <Logo />
+            </pluginRuntime.Slot>
+          </box>
+          <box height={1} minHeight={0} flexShrink={1} />
+          <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
+            <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
+              <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
+            </pluginRuntime.Slot>
+          </box>
+          <pluginRuntime.Slot name="home_bottom" />
+          <box flexGrow={1} minHeight={0} />
+          <Toast />
         </box>
-        <box height={1} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
-          <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
-            <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
-          </pluginRuntime.Slot>
-        </box>
-        <pluginRuntime.Slot name="home_bottom" />
-        <box flexGrow={1} minHeight={0} />
-        <Toast />
       </box>
       <box width="100%" flexShrink={0}>
         <pluginRuntime.Slot name="home_footer" mode="single_winner" />

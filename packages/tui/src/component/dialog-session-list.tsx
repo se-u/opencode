@@ -18,8 +18,9 @@ import { errorMessage } from "../util/error"
 import { DialogSessionDeleteFailed } from "./dialog-session-delete-failed"
 import { useCommandShortcut } from "../keymap"
 import { useEvent } from "../context/event"
+import type { Session } from "@opencode-ai/sdk/v2"
 
-type SessionListFilter = { scope?: "project"; path?: string }
+type SessionListFilter = { scope?: "project" | "global"; path?: string }
 
 export function createDialogSessionListQuery(input: { search?: string; filter: SessionListFilter }) {
   const search = input.search?.trim()
@@ -31,7 +32,7 @@ export function createDialogSessionListQuery(input: { search?: string; filter: S
   }
 }
 
-export function loadDialogSessionList<T>(input: {
+export function loadDialogSessionList<T = Session>(input: {
   search?: string
   filter: SessionListFilter
   list: (query: ReturnType<typeof createDialogSessionListQuery>) => Promise<{ data?: T[] }>

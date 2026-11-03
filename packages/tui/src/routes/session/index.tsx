@@ -54,6 +54,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { WorkspaceLabel } from "../../component/workspace-label"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -198,6 +199,11 @@ export function Session() {
     const current = session()
     return current ? { directory: current.directory, workspaceID: current.workspaceID } : undefined
   })
+  const workspace = () => {
+    const workspaceID = session()?.workspaceID
+    if (!workspaceID) return
+    return project.workspace.get(workspaceID)
+  }
 
   createEffect(() => {
     const title = Locale.truncate(session()?.title ?? "", 50)
@@ -214,14 +220,14 @@ export function Session() {
   const foregroundTasks = createMemo(() =>
     sync.data.capabilities.experimentalBackgroundSubagents
       ? messages().flatMap((message) =>
-          (sync.data.part[message.id] ?? []).filter(
-            (part): part is ToolPart =>
-              part.type === "tool" &&
-              part.tool === "task" &&
-              part.state.status === "running" &&
-              part.state.metadata?.background !== true,
-          ),
-        )
+        (sync.data.part[message.id] ?? []).filter(
+          (part): part is ToolPart =>
+            part.type === "tool" &&
+            part.tool === "task" &&
+            part.state.status === "running" &&
+            part.state.metadata?.background !== true,
+        ),
+      )
       : [],
   )
   const permissions = createMemo(() => {
@@ -267,8 +273,14 @@ export function Session() {
     if (sidebar() === "auto" && wide()) return true
     return false
   })
+  const rightSidebarVisible = createMemo(() => {
+    if (session()?.parentID) return false
+    return wide()
+  })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(
+    () => dimensions().width - (sidebarVisible() ? 42 : 0) - (rightSidebarVisible() ? 42 : 0) - 4,
+  )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -300,7 +312,7 @@ export function Session() {
         // (which will be non-interactive)
         try {
           await sync.bootstrap({ fatal: false })
-        } catch {}
+        } catch { }
       }
       editor.reconnect(result.data.directory)
       await sync.session.sync(sessionID)
@@ -609,7 +621,7 @@ export function Session() {
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
+        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => { })
         const revert = session()?.revert?.messageID
         const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
         if (!message) return
@@ -1163,6 +1175,26 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
+          <Show when={sidebarVisible()}>
+            <Switch>
+              <Match when={wide()}>
+                <Sidebar sessionID={route.sessionID} />
+              </Match>
+              <Match when={!wide()}>
+                <box
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  alignItems="flex-end"
+                  backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
+                >
+                  <Sidebar sessionID={route.sessionID} />
+                </box>
+              </Match>
+            </Switch>
+          </Show>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={session()}>
               <scrollbox
@@ -1321,29 +1353,105 @@ export function Session() {
             </Show>
             <Toast />
           </box>
-          <Show when={sidebarVisible()}>
-            <Switch>
-              <Match when={wide()}>
-                <Sidebar sessionID={route.sessionID} />
-              </Match>
-              <Match when={!wide()}>
-                <box
-                  position="absolute"
-                  top={0}
-                  left={0}
-                  right={0}
-                  bottom={0}
-                  alignItems="flex-end"
-                  backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
-                >
-                  <Sidebar sessionID={route.sessionID} />
-                </box>
-              </Match>
-            </Switch>
+          <Show when={rightSidebarVisible()}>
+            <box
+              backgroundColor={theme.backgroundPanel}
+              width={42}
+              height="100%"
+              paddingTop={1}
+              paddingBottom={1}
+              paddingLeft={2}
+              paddingRight={2}
+              flexDirection="column"
+              gap={2}
+            >
+              <Show when={session()}>
+                {(s) => (
+                  <>
+                    <box flexGrow={1} minHeight={0}>
+                      <box flexShrink={0} gap={1} paddingTop={1}>
+                        <pluginRuntime.Slot
+                          name="sidebar_title"
+                          mode="single_winner"
+                          session_id={route.sessionID!}
+                          title={s().title}
+                          share_url={s().share?.url}
+                        >
+                          <box paddingRight={1} border={["bottom"]} borderColor={theme.border}>
+                            <text fg={theme.text}>
+                              <b>{s().title}</b>
+                            </text>
+                            <Show when={s().directory}>
+                              <SessionDirectory
+                                directory={s().directory}
+                                onMove={() => keymap.dispatchCommand("session.move")}
+                              />
+                            </Show>
+                            <Show when={s().workspaceID}>
+                              <text fg={theme.textMuted}>
+                                <Show
+                                  when={workspace()}
+                                  fallback={<WorkspaceLabel type="unknown" name={s().workspaceID!} status="error" icon />}
+                                >
+                                  {(item) => (
+                                    <WorkspaceLabel
+                                      type={item().type}
+                                      name={item().name}
+                                      status={project.workspace.status(item().id) ?? "error"}
+                                      icon
+                                    />
+                                  )}
+                                </Show>
+                              </text>
+                            </Show>
+                            <Show when={s().share?.url}>
+                              <text fg={theme.textMuted}>{s().share!.url}</text>
+                            </Show>
+                          </box>
+                        </pluginRuntime.Slot>
+                      </box>
+                      <scrollbox
+                        flexGrow={1}
+                        scrollAcceleration={scrollAcceleration()}
+                        verticalScrollbarOptions={{
+                          visible: true,
+                          trackOptions: {
+                            backgroundColor: theme.background,
+                            foregroundColor: theme.borderActive,
+                          },
+                        }}
+                      >
+                        <box gap={2} paddingRight={1}>
+                          <pluginRuntime.Slot name="sidebar_content" session_id={route.sessionID!} />
+                        </box>
+                      </scrollbox>
+                    </box>
+
+                  </>
+                )}
+              </Show>
+            </box>
           </Show>
         </box>
       </context.Provider>
     </LocationProvider>
+  )
+}
+
+function SessionDirectory(props: { directory: string; onMove: () => void }) {
+  const { theme } = useTheme()
+  const [hover, setHover] = createSignal(false)
+  return (
+    <box
+      flexDirection="row"
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
+      onMouseDown={props.onMove}
+    >
+      <text fg={hover() ? theme.primary : theme.textMuted} wrapMode="none">
+        📁 {Locale.truncateLeft(props.directory, 34)}
+      </text>
+    </box>
   )
 }
 
@@ -1396,8 +1504,8 @@ function UserMessage(props: {
               setHover(false)
             }}
             onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
+            paddingTop={0}
+            paddingBottom={0}
             paddingLeft={2}
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
