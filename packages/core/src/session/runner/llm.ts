@@ -170,6 +170,18 @@ const layer = Layer.effect(
         concurrency: "unbounded",
       }).pipe(Effect.map(SystemContext.combine))
 
+    const isMutatingTool = (name: string) => {
+      const lower = name.toLowerCase()
+      return (
+        lower === "edit" ||
+        lower === "write" ||
+        lower === "apply_patch" ||
+        lower === "bash" ||
+        lower === "notebook_edit" ||
+        lower === "patch"
+      )
+    }
+
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
       promotion: SessionInput.Delivery | undefined,
@@ -182,6 +194,7 @@ const layer = Layer.effect(
       const agent = yield* agents.select(session.agent)
       const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
+      const mutatingLock = yield* Semaphore.make(1)
       let needsContinuation = false
       let currentStep = step
       if (promotion) {
@@ -201,7 +214,8 @@ const layer = Layer.effect(
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
-      const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+      const cacheSessionID = session.parentID ?? session.id
+      const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(cacheSessionID) ? cacheSessionID.slice(4) : cacheSessionID
       const request = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
@@ -247,7 +261,7 @@ const layer = Layer.effect(
             }
             needsContinuation = true
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
-            yield* Effect.uninterruptibleMask((restore) =>
+            const executeTool = Effect.uninterruptibleMask((restore) =>
               restore(
                 toolMaterialization.settle({
                   sessionID: session.id,
@@ -268,7 +282,11 @@ const layer = Layer.effect(
                   ),
                 ),
               ),
-            ).pipe(FiberSet.run(toolFibers))
+            )
+            const guardedExecution = isMutatingTool(event.name)
+              ? mutatingLock.withPermit(executeTool)
+              : executeTool
+            yield* guardedExecution.pipe(FiberSet.run(toolFibers))
           }),
         ),
         Effect.ensuring(withPublication(publisher.flush())),
@@ -309,6 +327,7 @@ const layer = Layer.effect(
               yield* withPublication(publisher.failAssistant("Provider turn interrupted"))
           }
           if (settled._tag === "Failure" && !Cause.hasInterrupts(settled.cause)) {
+            yield* FiberSet.clear(toolFibers)
             const failure = Cause.squash(settled.cause)
             const message = failure instanceof Error ? failure.message : String(failure)
             yield* withPublication(publisher.failUnsettledTools(`Tool execution failed: ${message}`))

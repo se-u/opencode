@@ -17,6 +17,10 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { InstanceState } from "@/effect/instance-state"
+import { TodoWriteTool } from "../../src/tool/todo"
+import { existsSync, promises as fs } from "node:fs"
+import path from "node:path"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -502,11 +506,6 @@ describe("tool.task", () => {
         expect(child.agent).toBe("reviewer")
         expect(child.permission).toEqual([
           {
-            permission: "todowrite",
-            pattern: "*",
-            action: "deny",
-          },
-          {
             permission: "bash",
             pattern: "*",
             action: "deny",
@@ -930,6 +929,107 @@ describe("tool.task", () => {
       const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("cancelled")
+    }),
+  )
+
+  it.instance("todowrite preserves unmentioned existing tasks and merges updates", () =>
+    Effect.gen(function* () {
+      const instance = yield* InstanceState.context
+      const tasksFile = path.join(instance.directory, ".opencode", "tasks.json")
+      const dir = path.dirname(tasksFile)
+      yield* Effect.promise(async () => {
+        if (!existsSync(dir)) {
+          await fs.mkdir(dir, { recursive: true })
+        }
+        const initialTasks = {
+          version: 1,
+          tasks: [
+            {
+              id: "task-1",
+              title: "First task",
+              status: "todo",
+              priority: 1,
+              description: "desc 1",
+              created_at: 1000,
+              updated_at: 1000,
+            },
+            {
+              id: "task-2",
+              title: "Second task",
+              status: "in_progress",
+              priority: 2,
+              description: "desc 2",
+              created_at: 2000,
+              updated_at: 2000,
+            },
+          ],
+        }
+        await Bun.write(tasksFile, JSON.stringify(initialTasks, null, 2))
+      })
+
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TodoWriteTool
+      const def = yield* tool.init()
+
+      // Update First task and add a new task, omitting Second task
+      yield* def.execute(
+        {
+          todos: [
+            {
+              content: "First task",
+              status: "completed",
+              priority: "high",
+              description: "updated desc 1",
+            },
+            {
+              content: "Third task",
+              status: "pending",
+              priority: "medium",
+              description: "desc 3",
+            },
+          ],
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {},
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const saved = yield* Effect.promise(async () => await Bun.file(tasksFile).json())
+      expect(saved.tasks).toHaveLength(3)
+      expect(saved.tasks[0]).toEqual({
+        id: "task-1",
+        title: "First task",
+        status: "done",
+        priority: 1,
+        description: "updated desc 1",
+        created_at: 1000,
+        updated_at: expect.any(Number),
+      })
+      expect(saved.tasks[1]).toEqual({
+        id: "task-4",
+        title: "Third task",
+        status: "todo",
+        priority: 2,
+        description: "desc 3",
+        created_at: expect.any(Number),
+        updated_at: expect.any(Number),
+      })
+      expect(saved.tasks[2]).toEqual({
+        id: "task-2",
+        title: "Second task",
+        status: "in_progress",
+        priority: 2,
+        description: "desc 2",
+        created_at: 2000,
+        updated_at: 2000,
+      })
     }),
   )
 

@@ -49,6 +49,10 @@ const BaseParameterFields = {
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  isolation: Schema.optional(Schema.Literals(["worktree"])).annotate({
+    description:
+      "Run the subagent in an isolated git worktree so it can edit files safely without conflicting with the main workspace.",
+  }),
 }
 
 const BaseParameters = Schema.Struct(BaseParameterFields)
@@ -141,9 +145,6 @@ export const TaskTool = Tool.define(
         subagent: next,
       })
       const childToolDenies = [
-        ...(next.permission.some((rule) => rule.permission === "todowrite")
-          ? []
-          : [{ permission: "todowrite" as const, pattern: "*" as const, action: "deny" as const }]),
         ...(next.permission.some((rule) => rule.permission === id)
           ? []
           : [{ permission: id, pattern: "*" as const, action: "deny" as const }]),
@@ -186,6 +187,7 @@ export const TaskTool = Tool.define(
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
         model,
+        ...(params.isolation ? { isolation: params.isolation } : {}),
         ...(runInBackground ? { background: true } : {}),
       }
 

@@ -10,10 +10,13 @@ import { Auth } from "../auth"
 import { ProviderTransform } from "@/provider/transform"
 
 import PROMPT_GENERATE from "./generate.txt"
+import PROMPT_AUTONOMOUS from "./prompt/autonomous.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_GENERAL from "./prompt/general.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
+import PROMPT_VERIFICATION from "./prompt/verification.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -141,6 +144,7 @@ const layer = Layer.effect(
           build: {
             name: "build",
             description: "The default agent. Executes tools based on configured permissions.",
+            prompt: PROMPT_AUTONOMOUS,
             options: {},
             permission: Permission.merge(
               defaults,
@@ -182,10 +186,38 @@ const layer = Layer.effect(
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
+            prompt: PROMPT_GENERAL,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
                 todowrite: "deny",
+                todoread: "deny",
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          verification: {
+            name: "verification",
+            description: `Specialized adversarial verification agent. Use after implementing features or bug fixes to actively try to break the implementation with adversarial probes (concurrency, boundary cases, idempotency) before declaring done.`,
+            prompt: PROMPT_VERIFICATION,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                grep: "allow",
+                glob: "allow",
+                list: "allow",
+                bash: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                read: "allow",
+                external_directory: readonlyExternalDirectory,
+                edit: {
+                  "*": "deny",
+                },
               }),
               user,
             ),
@@ -310,7 +342,8 @@ const layer = Layer.effect(
         }
 
         const get = Effect.fnUntraced(function* (agent: string) {
-          return agents[agent]
+          const key = agent === "autonomous" ? "build" : agent
+          return agents[key]
         })
 
         const list = Effect.fnUntraced(function* () {
