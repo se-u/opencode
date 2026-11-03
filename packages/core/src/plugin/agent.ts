@@ -9,8 +9,16 @@ import { Location } from "../location"
 import { PermissionV2 } from "../permission"
 
 const TRUNCATION_GLOB = path.join(Global.Path.data, "tool-output", "*")
-const BUILD_SYSTEM =
-  "You are an AI coding agent. Help the user accomplish software engineering tasks by inspecting the workspace, making targeted changes, and using tools according to the configured permissions."
+
+const PROMPT_AUTONOMOUS = `You are an AI autonomous coding agent. You execute engineering tasks proactively and end-to-end with full tool permissions without stopping for routine prompts.
+
+TASK TRACKING INSTRUCTIONS:
+- You MUST track all engineering tasks and progress using project tasks in .opencode/tasks.json.
+- Always initialize, maintain, and update .opencode/tasks.json as your single source of truth for planning and progress.
+- CRITICAL REQUIREMENT: For EVERY task in .opencode/tasks.json, you MUST specify the exact file location and exact line number(s) in the "description" field (e.g. "packages/tui/src/routes/session/index.tsx:1391-1405 - wrap directory text in clickable SessionDirectory component").
+- Never leave "description" generic or missing file:line references. If multiple files are involved, list each file and its exact line numbers.
+- Set status to "in_progress" before beginning work on a task (ensure only one task is in_progress at a time).
+- Update status to "done" immediately after the task is implemented and verified.`
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
@@ -124,7 +132,7 @@ export const Plugin = define({
     yield* ctx.agent.transform((draft) => {
       draft.update(AgentV2.defaultID, (item) => {
         item.description = "The default agent. Executes tools based on configured permissions."
-        item.system ??= BUILD_SYSTEM
+        item.system ??= PROMPT_AUTONOMOUS
         item.mode = "primary"
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
@@ -157,7 +165,7 @@ export const Plugin = define({
         item.description =
           "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
         item.mode = "subagent"
-        item.permissions.push(...PermissionV2.merge(defaults, [{ action: "todowrite", resource: "*", effect: "deny" }]))
+        item.permissions.push(...defaults)
       })
 
       draft.update(AgentV2.ID.make("explore"), (item) => {
