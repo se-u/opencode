@@ -1,36 +1,76 @@
-import yargs from "yargs"
+import yargs, { type CommandModule } from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
-import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
-import { ExportCommand } from "./cli/cmd/export"
-import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui"
-import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
-import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
 
 const args = hideBin(process.argv)
+
+interface CommandModuleLike {
+  command?: string | readonly string[]
+  describe?: string | false
+  aliases?: string | readonly string[]
+  builder?: unknown
+  handler: (...args: any[]) => any
+}
+
+type CommandLoader = () => Promise<CommandModuleLike>
+
+const COMMANDS: Record<string, CommandLoader> = {
+  acp: () => import("./cli/cmd/acp").then((m) => m.AcpCommand),
+  mcp: () => import("./cli/cmd/mcp").then((m) => m.McpCommand),
+  attach: () => import("./cli/cmd/attach").then((m) => m.AttachCommand),
+  run: () => import("./cli/cmd/run").then((m) => m.RunCommand),
+  generate: () => import("./cli/cmd/generate").then((m) => m.GenerateCommand),
+  debug: () => import("./cli/cmd/debug").then((m) => m.DebugCommand),
+  account: () => import("./cli/cmd/account").then((m) => m.ConsoleCommand),
+  providers: () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand),
+  auth: () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand),
+  agent: () => import("./cli/cmd/agent").then((m) => m.AgentCommand),
+  upgrade: () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand),
+  uninstall: () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand),
+  serve: () => import("./cli/cmd/serve").then((m) => m.ServeCommand),
+  web: () => import("./cli/cmd/web").then((m) => m.WebCommand),
+  models: () => import("./cli/cmd/models").then((m) => m.ModelsCommand),
+  stats: () => import("./cli/cmd/stats").then((m) => m.StatsCommand),
+  export: () => import("./cli/cmd/export").then((m) => m.ExportCommand),
+  import: () => import("./cli/cmd/import").then((m) => m.ImportCommand),
+  github: () => import("./cli/cmd/github").then((m) => m.GithubCommand),
+  pr: () => import("./cli/cmd/pr").then((m) => m.PrCommand),
+  session: () => import("./cli/cmd/session").then((m) => m.SessionCommand),
+  plug: () => import("./cli/cmd/plug").then((m) => m.PluginCommand),
+  plugin: () => import("./cli/cmd/plug").then((m) => m.PluginCommand),
+  db: () => import("./cli/cmd/db").then((m) => m.DbCommand),
+}
+
+const ALL_COMMAND_LOADERS: CommandLoader[] = [
+  () => import("./cli/cmd/acp").then((m) => m.AcpCommand),
+  () => import("./cli/cmd/mcp").then((m) => m.McpCommand),
+  () => import("./cli/cmd/tui").then((m) => m.TuiThreadCommand),
+  () => import("./cli/cmd/attach").then((m) => m.AttachCommand),
+  () => import("./cli/cmd/run").then((m) => m.RunCommand),
+  () => import("./cli/cmd/generate").then((m) => m.GenerateCommand),
+  () => import("./cli/cmd/debug").then((m) => m.DebugCommand),
+  () => import("./cli/cmd/account").then((m) => m.ConsoleCommand),
+  () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand),
+  () => import("./cli/cmd/agent").then((m) => m.AgentCommand),
+  () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand),
+  () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand),
+  () => import("./cli/cmd/serve").then((m) => m.ServeCommand),
+  () => import("./cli/cmd/web").then((m) => m.WebCommand),
+  () => import("./cli/cmd/models").then((m) => m.ModelsCommand),
+  () => import("./cli/cmd/stats").then((m) => m.StatsCommand),
+  () => import("./cli/cmd/export").then((m) => m.ExportCommand),
+  () => import("./cli/cmd/import").then((m) => m.ImportCommand),
+  () => import("./cli/cmd/github").then((m) => m.GithubCommand),
+  () => import("./cli/cmd/pr").then((m) => m.PrCommand),
+  () => import("./cli/cmd/session").then((m) => m.SessionCommand),
+  () => import("./cli/cmd/plug").then((m) => m.PluginCommand),
+  () => import("./cli/cmd/db").then((m) => m.DbCommand),
+]
 
 function show(out: string) {
   const text = out.trimStart()
@@ -78,29 +118,23 @@ const cli = yargs(args)
   })
   .usage("")
   .completion("completion", "generate shell completion script")
-  .command(AcpCommand)
-  .command(McpCommand)
-  .command(TuiThreadCommand)
-  .command(AttachCommand)
-  .command(RunCommand)
-  .command(GenerateCommand)
-  .command(DebugCommand)
-  .command(ConsoleCommand)
-  .command(ProvidersCommand)
-  .command(AgentCommand)
-  .command(UpgradeCommand)
-  .command(UninstallCommand)
-  .command(ServeCommand)
-  .command(WebCommand)
-  .command(ModelsCommand)
-  .command(StatsCommand)
-  .command(ExportCommand)
-  .command(ImportCommand)
-  .command(GithubCommand)
-  .command(PrCommand)
-  .command(SessionCommand)
-  .command(PluginCommand)
-  .command(DbCommand)
+
+const firstCmd = args.find((a) => !a.startsWith("-"))
+
+if (firstCmd && firstCmd in COMMANDS) {
+  const cmd = await COMMANDS[firstCmd]()
+  cli.command(cmd as any)
+} else if (args.includes("-h") || args.includes("--help")) {
+  const all = await Promise.all(ALL_COMMAND_LOADERS.map((fn) => fn()))
+  for (const cmd of all) {
+    cli.command(cmd as any)
+  }
+} else {
+  const { TuiThreadCommand } = await import("./cli/cmd/tui")
+  cli.command(TuiThreadCommand)
+}
+
+cli
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||
