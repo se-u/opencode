@@ -1,3 +1,4 @@
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import os from "os"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
@@ -1940,6 +1941,7 @@ const layer = Layer.effect(
     })
 
     const defaultModel = Effect.fn("Provider.defaultModel")(function* () {
+      if (Flag.OPENCODE_MODEL) return parseModel(Flag.OPENCODE_MODEL)
       const cfg = yield* config.get()
       if (cfg.model) return parseModel(cfg.model)
 
