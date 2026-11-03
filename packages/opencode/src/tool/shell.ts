@@ -231,25 +231,47 @@ function tail(text: string, maxLines: number, maxBytes: number) {
     }
   }
 
-  const out: string[] = []
-  let bytes = 0
-  for (let i = lines.length - 1; i >= 0 && out.length < maxLines; i--) {
-    const size = Buffer.byteLength(lines[i], "utf-8") + (out.length > 0 ? 1 : 0)
-    if (bytes + size > maxBytes) {
-      if (out.length === 0) {
+  const headTargetLines = Math.floor(maxLines / 5)
+  const headLines: string[] = []
+  let headBytes = 0
+  const maxHeadBytes = Math.floor(maxBytes / 4)
+
+  for (let i = 0; i < lines.length && headLines.length < headTargetLines; i++) {
+    const size = Buffer.byteLength(lines[i], "utf-8") + (headLines.length > 0 ? 1 : 0)
+    if (headBytes + size > maxHeadBytes) break
+    headLines.push(lines[i])
+    headBytes += size
+  }
+
+  const remainingMaxLines = maxLines - headLines.length
+  const remainingMaxBytes = maxBytes - headBytes
+
+  const tailLines: string[] = []
+  let tailBytes = 0
+  for (let i = lines.length - 1; i >= headLines.length && tailLines.length < remainingMaxLines; i--) {
+    const size = Buffer.byteLength(lines[i], "utf-8") + (tailLines.length > 0 ? 1 : 0)
+    if (tailBytes + size > remainingMaxBytes) {
+      if (tailLines.length === 0) {
         const buf = Buffer.from(lines[i], "utf-8")
-        let start = buf.length - maxBytes
+        let start = buf.length - remainingMaxBytes
         if (start < 0) start = 0
         while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++
-        out.unshift(buf.subarray(start).toString("utf-8"))
+        tailLines.unshift(buf.subarray(start).toString("utf-8"))
       }
       break
     }
-    out.unshift(lines[i])
-    bytes += size
+    tailLines.unshift(lines[i])
+    tailBytes += size
   }
+
+  const omittedCount = lines.length - headLines.length - tailLines.length
+  const separator =
+    omittedCount > 0
+      ? `\n\n... [${omittedCount} lines omitted; see full output file below] ...\n\n`
+      : "\n"
+
   return {
-    text: out.join("\n"),
+    text: headLines.length > 0 ? headLines.join("\n") + separator + tailLines.join("\n") : tailLines.join("\n"),
     cut: true,
   }
 }
